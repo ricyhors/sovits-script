@@ -10,49 +10,53 @@ function check_gfx_vendor() {
 	
 	if [ "$(lsmod | grep nvidia_drm)" ]; then
 		echo "You are running an NVIDIA card, your system should be compatible."
+		gpu="NVIDIA"
+	elif [ -x "$(command -v rocminfo)" ]; then
+		echo "You are running an AMD card, your system should be compatible."
+		gpu="AMD"
 	else
-		# I'm pretty sure other GPUs are supported, if they are, let me know or feel free to
-		# modify this script ·c·
-		echo "You aren't running an NVIDIA card or you do not have the proprietary drivers installed. Exiting..."
-		exit
-	fi
-}
+		echo "You aren't running an NVIDIA/AMD card or you do not have the proper drivers installed. Only CPU-based inferrence will be available"
+		echo "If you are on AMD, make sure you have the ROCm framework installed."
+		echo "Install guide for Arch: https://wiki.archlinux.org/index.php?title=GPGPU#ROCm"
+		echo "If you are on NVIDIA, make sure you are running the proprietary drivers instead of Nouveau."
+		echo "Guides on how to do this for your distro can be easily found."
+		read -p "Type Y if you wish to continue, any other key if you wish to exit: " response
 
-function setup_anaconda() {
-	wget -O miniconda.sh "https://repo.anaconda.com/miniconda/Miniconda3-py310_23.3.1-0-Linux-x86_64.sh"
-	exec miniconda.sh
+		response=$(echo -n $response | tr -cd '[:alnum:] [:space]' | tr '[:space:]' '-' | tr '[:lower:]' '[:upper:]')
+		if [ ! -z $response ] && [ $response == Y ]; then
+			echo "Installing with CPU support only..."
+			gpu="NONE"
+		else
+			echo "Exiting..."
+			exit
+		fi
+	fi
 }
 
 function setup_venv() {
 	# First check to see if anaconda is installed, if not, we'll proceed.
-	if ! command -v conda &> /dev/null
-	then
+	if [ ! command -v conda &> /dev/null ]; then
 		echo "Anaconda not installed, let's fix that..."
-		setup_anaconda
-	else
-		echo "Anaconda most likely installed, I'll skip this..."
-		# read -p "Please type the name for your venv here: " venvname
-		conda create -n $venvname python=3.10 pip
-
-		# This command is necessary because otherwise Anaconda refuses to initialize the
-		# venv within a shell script ·c·
-
-		source ~/miniconda3/etc/profile.d/conda.sh
-		conda activate $venvname
-		python -m pip install -U pip setuptools wheel
-		pip install -U torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+		wget -O miniconda.sh "https://repo.anaconda.com/miniconda/Miniconda3-py310_23.3.1-0-Linux-x86_64.sh"
+		( exec ./miniconda.sh )
 	fi
-}
+	conda create -n $venvname python=3.10 pip
 
-function setup_sovits_rt() {
-	if [ ! -d "$(pwd)/so-vits-svc-fork" ]; then
-		echo "so-vits-svc-fork not downloaded yet, let's fix that..."
-		git clone https://github.com/voicepaw/so-vits-svc-fork
-	fi
-	cd $(pwd)/so-vits-svc-fork
+	# This command is necessary because otherwise Anaconda refuses to initialize the
+	# venv within a shell script. There might be a better way but I haven't found it yet
+
+	source ~/miniconda3/etc/profile.d/conda.sh
+	conda activate $venvname
+	python -m pip install -U pip setuptools wheel
+
+	case $gpu in
+        	NVIDIA)		pip install -U torch torchaudio --index-url https://download.pytorch.org/whl/cu118;;
+        	AMD)            pip install -U torch torchaudio --index-url https://download.pytorch.org/whl/rocm5.4.2;;
+        	NONE)           echo "Installing without GPU support, skipping";;		# It still seems to install CUDA libraries even if I omit the command, interesting
+	esac
+
 	pip install -U so-vits-svc-fork
 }
-
 
 # This is so that you don't have to run "conda activate blahblahblah" before running "svcg".
 # I'm pretty sure there is a better way to do this, but if this works this works ·c·
@@ -84,16 +88,17 @@ function check_if_env_exists() {
 }
 
 clear
-echo "SVC install script v0.1 by ricy"
+mkdir 
+echo "SVC install script v0.2 by ricy"
 check_if_env_exists
 if [ $? == 1 ]; then
 	check_gfx_vendor
 	setup_venv
-	setup_sovits_rt
+#	setup_sovits_rt
 	setup_jank_shell_script
 else
 	echo "SVC already installed."
-	read -p "Would you like to uninstall SVC? Type Y for yes, any other key or nothing for no." answer
+	read -p "Would you like to uninstall SVC? Type Y for yes, any other key or nothing for no: " answer
 
 	# Sanitize input and make the answer uppercase
 	answer=$(echo -n $answer | tr -cd '[:alnum:] [:space]' | tr '[:space:]' '-' | tr '[:lower:]' '[:upper:]')
