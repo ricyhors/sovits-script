@@ -39,6 +39,7 @@ function setup_venv() {
 		echo "Anaconda not installed, let's fix that..."
 		wget -O miniconda.sh "https://repo.anaconda.com/miniconda/Miniconda3-py310_23.3.1-0-Linux-x86_64.sh"
 		( exec ./miniconda.sh )
+		source ~/.bashrc
 	fi
 	conda create -n $venvname python=3.10 pip
 
